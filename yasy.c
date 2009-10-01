@@ -1,3 +1,6 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <math.h>
 #include <avcodec.h>
 #include <avformat.h>
 #include <swscale.h>
@@ -419,7 +422,7 @@ int main(int argc, char **argv)
    * Allocation of media context(?)
    */
   
-  out_fmt_ctx = avformat_alloc_context();
+  out_fmt_ctx = av_alloc_format_context();//avformat_alloc_context();
   if (!out_fmt_ctx) {
     fprintf(stderr, "Memory error\n");
     exit(1);
