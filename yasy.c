@@ -301,8 +301,8 @@ int main(int argc, char **argv)
   out_cdc_ctx->codec_type = CODEC_TYPE_VIDEO;
   out_cdc_ctx->width  = width;
   out_cdc_ctx->height = height;
-  out_cdc_ctx->time_base.num = 1;
-  out_cdc_ctx->time_base.den = 60;
+  out_cdc_ctx->time_base.num = framerate.num;
+  out_cdc_ctx->time_base.den = framerate.den;
 
   out_cdc_ctx->pix_fmt = PIX_FMT_NONE;
   if( out_codec && out_codec->pix_fmts){
@@ -338,9 +338,17 @@ int main(int argc, char **argv)
   av_write_header( out_fmt_ctx);
 
   frame = avcodec_alloc_frame();
+  frame_rgb = avcodec_alloc_frame();
 
   int buf_size = out_cdc_ctx->width * out_cdc_ctx->height * 4;
   uint8_t *buf = av_malloc(buf_size);
+  
+
+  out_cdc_ctx->bit_rate = 128000;
+  out_cdc_ctx->qcompress = 0.0;
+  out_cdc_ctx->qmin = 0;
+  out_cdc_ctx->qmax = 2;
+
   i = 0;
   while( av_read_frame( in_fmt_ctx, &packet) >= 0){
     int x;
@@ -355,19 +363,27 @@ int main(int argc, char **argv)
 			    packet.size);
 
       if( frame_finished){
-        struct SwsContext *pSWSCtx = sws_getContext( in_cdc_ctx->width,
-						     in_cdc_ctx->height,
-						     in_cdc_ctx->pix_fmt,
-						     in_cdc_ctx->width,
-						     in_cdc_ctx->height,
-						     PIX_FMT_RGB24,
-						     SWS_BICUBIC,
-						     NULL,
-						     NULL,
-						     NULL);
-
-	frame_rgb = avcodec_alloc_frame();
-	if( frame_rgb == NULL) return;  
+        struct SwsContext *target2rgb = sws_getContext( in_cdc_ctx->width,
+							in_cdc_ctx->height,
+							in_cdc_ctx->pix_fmt,
+							in_cdc_ctx->width,
+							in_cdc_ctx->height,
+							PIX_FMT_RGB24,
+							SWS_BICUBIC,
+							NULL,
+							NULL,
+							NULL);
+        struct SwsContext *rgb2target = sws_getContext( in_cdc_ctx->width,
+							in_cdc_ctx->height,
+							PIX_FMT_RGB24,
+							in_cdc_ctx->width,
+							in_cdc_ctx->height,
+							in_cdc_ctx->pix_fmt,
+							SWS_BICUBIC,
+							NULL,
+							NULL,
+							NULL);
+	
 	num_bytes = avpicture_get_size( PIX_FMT_RGB24,
 					in_cdc_ctx->width,
 					in_cdc_ctx->height);
@@ -379,14 +395,14 @@ int main(int argc, char **argv)
 			in_cdc_ctx->width,
 			in_cdc_ctx->height);
 
-        sws_scale( pSWSCtx,
+        sws_scale( target2rgb,
 		   frame->data,
 		   frame->linesize,
 		   0,
 		   in_cdc_ctx->height,
 		   frame_rgb->data,
 		   frame_rgb->linesize);
-        sws_freeContext(pSWSCtx);
+        sws_freeContext( target2rgb);
 
 	for( y = 0; y < in_cdc_ctx->height; y++){
 	  for( x = 0; x < in_cdc_ctx->width; x++){
@@ -397,7 +413,22 @@ int main(int argc, char **argv)
 	  }
 	}
 
+
+        sws_scale( rgb2target,
+		   frame_rgb->data,
+		   frame_rgb->linesize,
+		   0,
+		   in_cdc_ctx->height,
+		   frame->data,
+		   frame->linesize);
+        sws_freeContext( rgb2target);
+
 	int out_size = avcodec_encode_video ( out_cdc_ctx, buf, buf_size, frame);
+	SaveFrame( frame_rgb, out_cdc_ctx->width, out_cdc_ctx->height, i);
+	printf( "bitrate: %i\n", out_cdc_ctx->bit_rate);
+	printf( "qcomp  : %f\n", out_cdc_ctx->qcompress);
+	printf( "qmin   : %i\n", out_cdc_ctx->qmin);
+	printf( "qmax   : %i\n", out_cdc_ctx->qmax);
 	if (out_size == 0){
 	  continue;
 	} else if (out_size < 0){
@@ -421,15 +452,18 @@ int main(int argc, char **argv)
 	if(ret != 0) error("can't write frame.");
 
 	av_free( buffer);
+	av_free_packet( &packet);
 	printf( "%i\n", i);
 	i++;
+	if( i > 30) break;
       }
     }
     av_free_packet( &packet);
   }
-  puts("ALL YOUR BASES ARE BELONG TO US");
 
+  puts("Encode completed");
   av_write_trailer( out_fmt_ctx);
+  puts("Trailer writing completed");  
 
   if (out_stream_audio) close_audio( out_fmt_ctx, out_stream_audio);
 
@@ -437,20 +471,21 @@ int main(int argc, char **argv)
     av_freep(&out_fmt_ctx->streams[i]->codec);
     av_freep(&out_fmt_ctx->streams[i]);
   }
+  puts("Streams closed");
   
   if (!(out_fmt->flags & AVFMT_NOFILE)) {
     url_fclose(out_fmt_ctx->pb);
   }
-
+  puts("Files are closed");
 
   av_free( frame);
   av_free( frame_rgb);
   avcodec_close( in_cdc_ctx);
   av_close_input_file( in_fmt_ctx);
-
-  
   av_free( out_fmt_ctx);
-  
+  puts("Allocated memories released");
+  puts("ALL YOUR BASES ARE BELONG TO US");
+
   return 0;
   
 }
