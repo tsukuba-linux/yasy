@@ -424,7 +424,7 @@ int main(int argc, char **argv)
         sws_freeContext( rgb2target);
 
 	int out_size = avcodec_encode_video ( out_cdc_ctx, buf, buf_size, frame);
-	SaveFrame( frame_rgb, out_cdc_ctx->width, out_cdc_ctx->height, i);
+	//SaveFrame( frame_rgb, out_cdc_ctx->width, out_cdc_ctx->height, i);
 	printf( "bitrate: %i\n", out_cdc_ctx->bit_rate);
 	printf( "qcomp  : %f\n", out_cdc_ctx->qcompress);
 	printf( "qmin   : %i\n", out_cdc_ctx->qmin);
@@ -455,7 +455,7 @@ int main(int argc, char **argv)
 	av_free_packet( &packet);
 	printf( "%i\n", i);
 	i++;
-	if( i > 30) break;
+	//if( i > 30) break;
       }
     }
     av_free_packet( &packet);
