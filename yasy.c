@@ -75,132 +75,6 @@ static void write_audio_frame(AVFormatContext *oc, AVStream *st)
     }
 }
 
-void write_video_frame(AVFormatContext *oc, AVStream *st, AVFrame* frame){
-    int out_size, ret;
-    AVCodecContext *c;
-    static struct SwsContext *img_convert_ctx;
-
-    c = st->codec;
-    
-    img_convert_ctx = sws_getContext( c->width,
-				      c->height, 
-				      PIX_FMT_RGB24,
-				      c->width,
-				      c->height,
-				      c->pix_fmt,
-				      SWS_BICUBIC, 
-				      NULL, NULL, NULL);
-    
-    sws_scale( img_convert_ctx, frame->data, 
-	       frame->linesize, 0, 
-	       c->height,
-	       picture->data, picture->linesize);
-    
-    
-    puts("test6");
-    
-    if (oc->oformat->flags & AVFMT_RAWPICTURE) {
-      AVPacket pkt;
-      puts("test7");
-      av_init_packet(&pkt);
-      
-      pkt.flags |= PKT_FLAG_KEY;
-      pkt.stream_index= st->index;
-      pkt.data= (uint8_t *)picture;
-      pkt.size= sizeof(AVPicture);
-      
-      ret = av_interleaved_write_frame(oc, &pkt);
-    } else {
-      puts("test9");
-      /* encode the image */
-      out_size = avcodec_encode_video(c, video_outbuf, video_outbuf_size, picture);
-      puts("test10");
-      /* if zero size, it means the image was buffered */
-      if (out_size > 0) {
-	AVPacket pkt;
-	av_init_packet(&pkt);
-	puts("test11");
-	if (c->coded_frame->pts != AV_NOPTS_VALUE)
-	  pkt.pts= av_rescale_q(c->coded_frame->pts, c->time_base, st->time_base);
-	if(c->coded_frame->key_frame)
-	  pkt.flags |= PKT_FLAG_KEY;
-	pkt.stream_index= st->index;
-	pkt.data= video_outbuf;
-	pkt.size= out_size;
-	puts("test12");
-	ret = av_interleaved_write_frame(oc, &pkt);
-	puts("test13");
-      } else {
-	ret = 0;
-      }
-    }
-    puts("test8");
-    if (ret != 0) {
-      fprintf(stderr, "Error while writing video frame\n");
-      exit(1);
-    }
-    frame_count++;
-}
-
-AVFrame *alloc_picture(enum PixelFormat pix_fmt, int width, int height){
-    AVFrame *picture;
-    uint8_t *picture_buf;
-    int size;
-
-    picture = avcodec_alloc_frame();
-    if (!picture)
-        return NULL;
-
-    size = avpicture_get_size(pix_fmt, width, height);
-    printf("GUDVSDVASDA: %i x %i = %i\n", width,height, size);
-    picture_buf = av_malloc(size);
-    if (!picture_buf) {
-        av_free(picture);
-        return NULL;
-    }
-    avpicture_fill((AVPicture *)picture, picture_buf,
-                   pix_fmt, width, height);
-    return picture;
-}
-
-void open_video(AVFormatContext *oc, AVStream *st){
-    AVCodec *codec;
-    AVCodecContext *c;
-
-    c = st->codec;
-
-    /* find the video encoder */
-    codec = avcodec_find_encoder(c->codec_id);
-    avcodec_open(c, codec);
-
-    video_outbuf = NULL;
-    if (!(oc->oformat->flags & AVFMT_RAWPICTURE)) {
-      puts("test14");
-      video_outbuf_size = 200000;
-      video_outbuf = av_malloc(video_outbuf_size);
-    }
-    
-    /* allocate the encoded raw picture */
-    picture = alloc_picture(c->pix_fmt, c->width, c->height);
-    if (!picture) {
-        fprintf(stderr, "Could not allocate picture\n");
-        exit(1);
-    }
-
-    /* if the output format is not YUV420P, then a temporary YUV420P
-       picture is needed too. It is then converted to the required
-       output format */
-    tmp_picture = NULL;
-    if (c->pix_fmt != PIX_FMT_YUV420P) {
-        tmp_picture = alloc_picture(PIX_FMT_YUV420P, c->width, c->height);
-        if (!tmp_picture) {
-            fprintf(stderr, "Could not allocate temporary picture\n");
-            exit(1);
-        }
-    }
-}
-
-
 void open_audio(AVFormatContext *oc, AVStream *st){
     AVCodecContext *c;
     AVCodec *codec;
@@ -268,72 +142,12 @@ AVStream *add_audio_stream(AVFormatContext *oc, enum CodecID codec_id){
     return st;
 }
 
-AVStream *add_video_stream( AVFormatContext* oc,
-			    enum CodecID codec_id,
-			    AVRational* fr,
-			    int width, int height,
-			    enum PixelFormat pixfmt){
-
-    AVCodecContext *c;
-    AVStream *st;
-
-    st = av_new_stream(oc, 0);
-    if (!st) {
-        fprintf(stderr, "Could not alloc stream\n");
-        exit(1);
-    }
-
-    c = st->codec;
-    c->codec_id = codec_id;
-    c->codec_type = CODEC_TYPE_VIDEO;
-
-    c->bit_rate = 400000;
-    c->width = width;
-    c->height = height;
-
-    c->time_base.den = fr->den;
-    c->time_base.num = fr->num;
-
-    c->gop_size = 12;
-    c->pix_fmt = pixfmt;
-    if (c->codec_id == CODEC_ID_MPEG2VIDEO) {
-        /* just for testing, we also add B frames */
-        c->max_b_frames = 2;
-    }
-    if (c->codec_id == CODEC_ID_MPEG1VIDEO){
-        /* Needed to avoid using macroblocks in which some coeffs overflow.
-           This does not happen with normal video, it just happens here as
-           the motion of the chroma plane does not match the luma plane. */
-        c->mb_decision=2;
-    }
-    // some formats want stream headers to be separate
-    if(oc->oformat->flags & AVFMT_GLOBALHEADER)
-        c->flags |= CODEC_FLAG_GLOBAL_HEADER;
-
-    return st;
-}
-
-
 static void close_audio(AVFormatContext *oc, AVStream *st)
 {
     avcodec_close(st->codec);
 
     av_free(samples);
     av_free(audio_outbuf);
-}
-
-
-
-static void close_video(AVFormatContext *oc, AVStream *st)
-{
-    avcodec_close(st->codec);
-    av_free(picture->data[0]);
-    av_free(picture);
-    if (tmp_picture) {
-        av_free(tmp_picture->data[0]);
-        av_free(tmp_picture);
-    }
-    av_free(video_outbuf);
 }
 
 
@@ -348,6 +162,8 @@ int main(int argc, char **argv)
   // Structures to write 
   AVOutputFormat  *out_fmt;
   AVFormatContext *out_fmt_ctx;
+  AVCodecContext *out_cdc_ctx;
+  AVCodec *out_codec;
   AVStream *out_stream_audio;
   AVStream *out_stream_video;
   double out_audio_pts;
@@ -470,13 +286,36 @@ int main(int argc, char **argv)
 
   avcodec_open( in_cdc_ctx, in_cdc);
 
-  if( out_fmt->video_codec != CODEC_ID_NONE) {
-    out_stream_video = add_video_stream( out_fmt_ctx,
-					 out_fmt->video_codec,
-					 &framerate,
-					 width,height,
-					 PIX_FMT_YUV420P);
+  // add out stream
+  out_stream_video = av_new_stream( out_fmt_ctx, 0);
+  enum CodecID codec_id = av_guess_codec( out_fmt_ctx->oformat,
+					  NULL,
+					  out_fmt_ctx->filename,
+					  NULL, 
+					  CODEC_TYPE_VIDEO);
+
+  out_codec = avcodec_find_encoder(codec_id);
+  if(out_codec == NULL) error("can't find codec(encoder).");
+  out_cdc_ctx = out_stream_video->codec;
+  out_cdc_ctx->codec_id   = out_codec->id;
+  out_cdc_ctx->codec_type = CODEC_TYPE_VIDEO;
+  out_cdc_ctx->width  = width;
+  out_cdc_ctx->height = height;
+  out_cdc_ctx->time_base.num = 1;
+  out_cdc_ctx->time_base.den = 60;
+
+  out_cdc_ctx->pix_fmt = PIX_FMT_NONE;
+  if( out_codec && out_codec->pix_fmts){
+    const enum PixelFormat *p = out_codec->pix_fmts;
+    while(*p++ != -1){
+      if(*p == out_cdc_ctx->pix_fmt) break;
+    }
+    if(*p == -1) out_cdc_ctx->pix_fmt = out_codec->pix_fmts[0];
   }
+  if( out_fmt->flags & AVFMT_GLOBALHEADER)
+    out_cdc_ctx->flags |= CODEC_FLAG_GLOBAL_HEADER;
+
+
   if ( out_fmt->audio_codec != CODEC_ID_NONE) {
     out_stream_audio = add_audio_stream( out_fmt_ctx, out_fmt->audio_codec);
   }
@@ -484,13 +323,24 @@ int main(int argc, char **argv)
 
   dump_format( out_fmt_ctx, 0, o_filename, 1);
 
-  if(out_stream_video) open_video( out_fmt_ctx, out_stream_video);
+
+  int ret = avcodec_open( out_cdc_ctx, out_codec);
+  if(ret != 0) error("can't open codec(encoder).");
+
+  if (! ( out_fmt->flags & AVFMT_NOFILE )) {
+    ret = url_fopen(&out_fmt_ctx->pb, out_fmt_ctx->filename, URL_WRONLY);
+    if (ret < 0) error("can't open output file.");
+  }
+  
+
   if(out_stream_audio) open_audio( out_fmt_ctx, out_stream_audio);
 
-  printf( "CODEC-ID:%i\n", out_fmt_ctx->oformat->video_codec);
+  av_write_header( out_fmt_ctx);
 
   frame = avcodec_alloc_frame();
 
+  int buf_size = out_cdc_ctx->width * out_cdc_ctx->height * 4;
+  uint8_t *buf = av_malloc(buf_size);
   i = 0;
   while( av_read_frame( in_fmt_ctx, &packet) >= 0){
     int x;
@@ -546,38 +396,41 @@ int main(int argc, char **argv)
 	    //pFrameRGB->data[0][p+2] = 0xff;
 	  }
 	}
-	puts("test1");	
-	if ( out_stream_audio){
-	  audio_pts = (double)out_stream_audio->pts.val * out_stream_audio->time_base.num / out_stream_audio->time_base.den;
-	} else{
-	  audio_pts = 0.0;
-	}
-	
-	if (out_stream_video){
-	  video_pts = (double)out_stream_video->pts.val * out_stream_video->time_base.num / out_stream_video->time_base.den;
-	}else{
-	  video_pts = 0.0;
-	}
-	puts("test2");
-	if (!out_stream_video
-	    || ( out_stream_video && out_stream_audio  && audio_pts < video_pts)) {
-	  puts("test3");
-	  write_audio_frame( out_fmt_ctx, out_stream_audio);
-	} else {
-	  puts("test4");
-	  write_video_frame( out_fmt_ctx, out_stream_video, frame_rgb);
+
+	int out_size = avcodec_encode_video ( out_cdc_ctx, buf, buf_size, frame);
+	if (out_size == 0){
+	  continue;
+	} else if (out_size < 0){
+	  error("can't encode frame.");
 	}
 
+	AVPacket packet;
+	av_init_packet(&packet);
+
+	packet.stream_index = out_stream_video->index;
+	packet.data= buf;
+	packet.size= out_size;
+
+	packet.pts= av_rescale_q( out_cdc_ctx->coded_frame->pts, 
+				  out_cdc_ctx->time_base,
+				  out_stream_video->time_base);
+	if( out_cdc_ctx->coded_frame->key_frame)
+	  packet.flags |= PKT_FLAG_KEY;
+
+	int ret = av_interleaved_write_frame( out_fmt_ctx, &packet);
+	if(ret != 0) error("can't write frame.");
+
 	av_free( buffer);
+	printf( "%i\n", i);
 	i++;
       }
     }
     av_free_packet( &packet);
   }
+  puts("ALL YOUR BASES ARE BELONG TO US");
 
   av_write_trailer( out_fmt_ctx);
 
-  if (out_stream_video) close_video( out_fmt_ctx, out_stream_video);
   if (out_stream_audio) close_audio( out_fmt_ctx, out_stream_audio);
 
   for(i = 0; i < out_fmt_ctx->nb_streams; i++) {
