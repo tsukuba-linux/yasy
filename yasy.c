@@ -1,12 +1,23 @@
+
+// Using sevral standard libraries
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
+
+// Using FFmpeg API libraries
 #include <avcodec.h>
 #include <avformat.h>
 #include <swscale.h>
 
-#define DEBUG
+// Using OpenCV libraries
+#include <cv.h>
+#include <cxcore.h>
+#include <highgui.h>
 
+// Using GD libraries
+#include <gd.h>
+
+#define DEBUG
 
 AVFrame *picture, *tmp_picture;
 uint8_t *video_outbuf;
@@ -18,7 +29,39 @@ uint8_t *audio_outbuf;
 int audio_outbuf_size;
 int audio_input_frame_size;
 
-void SaveFrame(AVFrame *pFrame, int width, int height, int iFrame) {
+void yasy_overlay( AVFrame* frame, gdImage* img,
+		   int offset_x, int offset_y,
+		   int video_width, int video_height)
+{
+
+  int x, y;
+
+  int width  = gdImageSX( img);
+  int height = gdImageSY( img);
+
+  for( y = 0; y < height; y++){
+    for( x = 0; x < width; x++){
+
+      int r, g, b;
+      int p = x * 3 + y * frame->linesize[0];
+      int c_index = gdImageGetPixel( img, x, y);
+      double a = (double)( 127 - gdImageAlpha( img, c_index)) / 127.0;
+
+      r = frame->data[0][p] * (1.0 - a) + (double)gdImageRed( img, c_index) * a;
+      g = frame->data[0][p+1] * (1.0 - a) + (double)gdImageGreen( img, c_index) * a;
+      b = frame->data[0][p+2] * (1.0 - a) + (double)gdImageBlue( img, c_index) * a;
+						  
+      frame->data[0][p] = r;
+      frame->data[0][p+1] = g;
+      frame->data[0][p+2] = b;
+
+    }
+  }
+
+}
+
+void SaveFrame(AVFrame *pFrame, int width, int height, int iFrame)
+{
   FILE *pFile;
   char szFilename[32];
   int  y;
@@ -75,7 +118,8 @@ static void write_audio_frame(AVFormatContext *oc, AVStream *st)
     }
 }
 
-void open_audio(AVFormatContext *oc, AVStream *st){
+void open_audio(AVFormatContext *oc, AVStream *st)
+{
     AVCodecContext *c;
     AVCodec *codec;
 
@@ -124,7 +168,8 @@ void open_audio(AVFormatContext *oc, AVStream *st){
 }
 
 
-AVStream *add_audio_stream(AVFormatContext *oc, enum CodecID codec_id){
+AVStream *add_audio_stream(AVFormatContext *oc, enum CodecID codec_id)
+{
 
     AVCodecContext *c;
     AVStream *st;
@@ -158,7 +203,6 @@ int main(int argc, char **argv)
   const char *i_filename;
   const char *o_filename;
   
-
   // Structures to write 
   AVOutputFormat  *out_fmt;
   AVFormatContext *out_fmt_ctx;
@@ -195,8 +239,15 @@ int main(int argc, char **argv)
   double audio_pts;
   double video_pts;
   
+  gdImage* img;
+  FILE* infile;
   int i;
- 
+
+
+  infile = fopen( "samples/headline_1-1.png", "rb");
+  img = gdImageCreateFromPng( infile);
+  fclose( infile);
+
   av_register_all();
 
   i_filename = argv[1];
@@ -404,15 +455,10 @@ int main(int argc, char **argv)
 		   frame_rgb->linesize);
         sws_freeContext( target2rgb);
 
-	for( y = 0; y < in_cdc_ctx->height; y++){
-	  for( x = 0; x < in_cdc_ctx->width; x++){
-	    int p = x * 3 + y * frame_rgb->linesize[0];
-	    frame_rgb->data[0][p]   = 0xff;
-	    //pFrameRGB->data[0][p+1] = 0xff;
-	    //pFrameRGB->data[0][p+2] = 0xff;
-	  }
-	}
-
+	yasy_overlay( frame_rgb, img,
+		      10, 10,
+		      out_cdc_ctx->width,
+		      out_cdc_ctx->height);
 
         sws_scale( rgb2target,
 		   frame_rgb->data,
@@ -425,10 +471,12 @@ int main(int argc, char **argv)
 
 	int out_size = avcodec_encode_video ( out_cdc_ctx, buf, buf_size, frame);
 	//SaveFrame( frame_rgb, out_cdc_ctx->width, out_cdc_ctx->height, i);
+#ifdef DEBUG
 	printf( "bitrate: %i\n", out_cdc_ctx->bit_rate);
 	printf( "qcomp  : %f\n", out_cdc_ctx->qcompress);
 	printf( "qmin   : %i\n", out_cdc_ctx->qmin);
 	printf( "qmax   : %i\n", out_cdc_ctx->qmax);
+#endif
 	if (out_size == 0){
 	  continue;
 	} else if (out_size < 0){
@@ -455,7 +503,9 @@ int main(int argc, char **argv)
 	av_free_packet( &packet);
 	printf( "%i\n", i);
 	i++;
-	//if( i > 30) break;
+#ifdef DEBUG
+	if( i > 30) break;
+#endif
       }
     }
     av_free_packet( &packet);
@@ -483,6 +533,7 @@ int main(int argc, char **argv)
   avcodec_close( in_cdc_ctx);
   av_close_input_file( in_fmt_ctx);
   av_free( out_fmt_ctx);
+  gdImageDestroy( img);
   puts("Allocated memories released");
   puts("ALL YOUR BASES ARE BELONG TO US");
 
