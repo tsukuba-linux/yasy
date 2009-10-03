@@ -1,10 +1,12 @@
 #!/bin/sh
 
-echo "This test script will run only on limited environment: Because test movies are too huge to put repository"
 
+date
 echo "---- Test 1 ----"
-./a.out cat2.avi cat2.mpg
+./a.out samples/sample1.ogg out/sample1.mp4
 
 echo "---- Test 2 ----"
-./a.out ~/Videos/utlug/4th/editted-1.avi cat2.mpg
+echo "This test2 script will run only on limited environment: Because test movies are too huge to put repository"
+./a.out ~/Videos/utlug/4th/editted-1.avi cat2.mp4 2> /dev/null
+date
 
