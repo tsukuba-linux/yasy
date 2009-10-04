@@ -37,20 +37,18 @@ void yasy_overlay( AVFrame* frame, gdImage* img,
 
   for( y = 0; y < height; y++){
     for( x = 0; x < width; x++){
-
       int r, g, b;
-      int p = x * 3 + y * frame->linesize[0];
+      int p = (x + offset_x) * 3 + (y + offset_y) * frame->linesize[0];
       int c_index = gdImageGetPixel( img, x, y);
       double a = (double)( 127 - gdImageAlpha( img, c_index)) / 127.0;
 
       r = frame->data[0][p  ] * (1.0 - a) + (double)gdImageRed(   img, c_index) * a;
       g = frame->data[0][p+1] * (1.0 - a) + (double)gdImageGreen( img, c_index) * a;
       b = frame->data[0][p+2] * (1.0 - a) + (double)gdImageBlue(  img, c_index) * a;
-						  
-      frame->data[0][p] = r;
+
+      frame->data[0][p]   = r;
       frame->data[0][p+1] = g;
       frame->data[0][p+2] = b;
-
     }
   }
 
@@ -408,7 +406,7 @@ int main(int argc, char **argv)
         sws_freeContext( target2rgb);
 
 	yasy_overlay( frame_rgb, img,
-		      10, 10,
+		      40, 40,
 		      out_cdc_ctx->width,
 		      out_cdc_ctx->height);
 
@@ -455,7 +453,7 @@ int main(int argc, char **argv)
 	av_free_packet( &packet);
 	printf( "%i\n", i);
 	i++;
-	//	if( i >= 300)break;
+	if( i >= 300)break;
       }
     }
     av_free_packet( &packet);
