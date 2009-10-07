@@ -27,32 +27,88 @@ int audio_input_frame_size;
 
 void yasy_overlay( AVFrame* frame, gdImage* img,
 		   int offset_x, int offset_y,
-		   int video_width, int video_height)
+		   int video_width, int video_height,
+		   int angle)
 {
 
   int x, y;
 
   int width  = gdImageSX( img);
   int height = gdImageSY( img);
+  gdImage* rimg;
 
+  if( angle){
+    rimg = gdImageCreate( width * 4, height * 4);
+    gdImageCopyRotated( rimg, img,
+			width >> 1, height >> 1,
+			0, 0,
+			width,
+			height,
+			angle % 360);
+  }else{
+    rimg = img;
+  }
+  
   for( y = 0; y < height; y++){
     for( x = 0; x < width; x++){
       int r, g, b;
       int p = (x + offset_x) * 3 + (y + offset_y) * frame->linesize[0];
-      int c_index = gdImageGetPixel( img, x, y);
-      double a = (double)( 127 - gdImageAlpha( img, c_index)) / 127.0;
+      int c_index = gdImageGetPixel( rimg, x, y);
+      double a = (double)( 127 - gdImageAlpha( rimg, c_index)) / 127.0;
 
-      r = frame->data[0][p  ] * (1.0 - a) + (double)gdImageRed(   img, c_index) * a;
-      g = frame->data[0][p+1] * (1.0 - a) + (double)gdImageGreen( img, c_index) * a;
-      b = frame->data[0][p+2] * (1.0 - a) + (double)gdImageBlue(  img, c_index) * a;
+      r = frame->data[0][p  ] * (1.0 - a) + (double)gdImageRed(   rimg, c_index) * a;
+      g = frame->data[0][p+1] * (1.0 - a) + (double)gdImageGreen( rimg, c_index) * a;
+      b = frame->data[0][p+2] * (1.0 - a) + (double)gdImageBlue(  rimg, c_index) * a;
 
       frame->data[0][p]   = r;
       frame->data[0][p+1] = g;
       frame->data[0][p+2] = b;
     }
   }
+  if( angle) gdImageDestroy( rimg);
+}
+
+void yasy_string( AVFrame* frame, char*s,
+		  int offset_x, int offset_y,
+		  int color, int bgcolor, int size,
+		  int video_width, int video_height,
+		  char* font)
+{
+
+  gdImage* img;
+  int brect[8];
+
+  int r = (color & 0xff000000) >> 24;
+  int g = (color & 0x00ff0000) >> 16;
+  int b = (color & 0x0000ff00) >> 8;
+  int a = 127 - ((color & 0x000000ff) >> 1);
+
+  int br = (bgcolor & 0xff000000) >> 24;
+  int bg = (bgcolor & 0x00ff0000) >> 16;
+  int bb = (bgcolor & 0x0000ff00) >> 8;
+  int ba = 127 - ((bgcolor & 0x000000ff) >> 1);
+
+  int x, y;
+  int margin = size / 10;
+  int total_margin = margin << 1;
+
+  gdImageStringFT( NULL, &brect[0], 0,
+		   font, size, 0.0, 0, 0, s);
+
+  img = gdImageCreate( brect[2] - brect[6] + total_margin,
+		       brect[3] - brect[7] + total_margin);
+
+  gdImageColorResolve(img, br, bg, bb);
+
+  gdImageStringFT( img, &brect[0],
+		   gdImageColorResolveAlpha(img, r, g, b, a),
+		   font, size, 0.0, margin, margin - brect[1] - brect[7], s);
+
+  yasy_overlay( frame, img, offset_x, offset_y, video_width, video_height, 0);
+  gdImageDestroy( img);
 
 }
+
 
 void SaveFrame(AVFrame *pFrame, int width, int height, int iFrame)
 {
@@ -120,12 +176,17 @@ int main(int argc, char **argv)
   double video_pts;
   
   gdImage* img;
+  gdImage* loop;
   FILE* infile;
   int i;
 
 
-  infile = fopen( "samples/headline_1-1.png", "rb");
+  infile = fopen( "samples/headline.png", "rb");
   img = gdImageCreateFromPng( infile);
+  fclose( infile);
+
+  infile = fopen( "samples/headline_loop.png", "rb");
+  loop = gdImageCreateFromPng( infile);
   fclose( infile);
 
   av_register_all();
@@ -405,10 +466,32 @@ int main(int argc, char **argv)
 		   frame_rgb->linesize);
         sws_freeContext( target2rgb);
 
+	static const int HEADLINE_X = 10;
+	static const int HEADLINE_Y = 10;
 	yasy_overlay( frame_rgb, img,
-		      40, 40,
+		      HEADLINE_X, HEADLINE_Y,
 		      out_cdc_ctx->width,
-		      out_cdc_ctx->height);
+		      out_cdc_ctx->height,
+		      0);
+
+	yasy_overlay( frame_rgb, loop,
+		      HEADLINE_X - 16, HEADLINE_Y - 7,
+		      out_cdc_ctx->width,
+		      out_cdc_ctx->height,
+		      (i++) * 2);
+
+	yasy_string( frame_rgb, "USBからLinuxを起動してみよう！", 130, 23,
+		     0xffffffff, 0x653cc1ff, 10,
+		     out_cdc_ctx->width,
+		     out_cdc_ctx->height,
+		     "/usr/share/fonts/ipa-pgothic/ipagp.otf");
+
+	yasy_string( frame_rgb, "speaker: monoqlo", 220, 49,
+		     0xffffffff, 0x9b75ffff, 10,
+		     out_cdc_ctx->width,
+		     out_cdc_ctx->height,
+		     "/usr/share/fonts/dejavu/DejaVuSerif.ttf");
+
 
         sws_scale( rgb2target,
 		   frame_rgb->data,
@@ -452,8 +535,9 @@ int main(int argc, char **argv)
 	av_free( buffer);
 	av_free_packet( &packet);
 	printf( "%i\n", i);
-	i++;
-	if( i >= 300)break;
+#ifdef DEBUG
+       	if( i >= 100)break;
+#endif
       }
     }
     av_free_packet( &packet);
@@ -481,6 +565,7 @@ int main(int argc, char **argv)
   av_close_input_file( in_fmt_ctx);
   av_free( out_fmt_ctx);
   gdImageDestroy( img);
+  gdImageDestroy( loop);
   free( sample);
   puts("Allocated memories released");
   puts("ALL YOUR BASES ARE BELONG TO US");
