@@ -18,6 +18,7 @@
 #include <gd.h>
 
 #define DEBUG
+//#define HEAD
 
 float t, tincr, tincr2;
 int16_t *samples;
@@ -230,7 +231,7 @@ int main(int argc, char **argv)
    * Allocation of media context(?)
    */
   
-  out_fmt_ctx = av_alloc_format_context();//avformat_alloc_context();
+  out_fmt_ctx = avformat_alloc_context();//av_alloc_format_context();
   if (!out_fmt_ctx) {
     fprintf(stderr, "Memory error\n");
     exit(1);
@@ -423,6 +424,8 @@ int main(int argc, char **argv)
 			    &frame_finished,
 			    packet.data,
 			    packet.size);
+      printf( "%i\n", frame->pts);
+      //if( i >= 34877){ frame->pts += 34877;}
 
       if( frame_finished){
         struct SwsContext *target2rgb = sws_getContext( in_cdc_ctx->width,
@@ -480,18 +483,18 @@ int main(int argc, char **argv)
 		      out_cdc_ctx->height,
 		      (i++) * 2);
 
-	yasy_string( frame_rgb, "USBからLinuxを起動してみよう！", 130, 23,
+
+	yasy_string( frame_rgb, "楽しい怪しいシェルスクリプト", 130, 23,
 		     0xffffffff, 0x653cc1ff, 10,
 		     out_cdc_ctx->width,
 		     out_cdc_ctx->height,
 		     "/usr/share/fonts/ipa-pgothic/ipagp.otf");
 
-	yasy_string( frame_rgb, "speaker: monoqlo", 220, 49,
+	yasy_string( frame_rgb, "speaker: KIM", 220, 49,
 		     0xffffffff, 0x9b75ffff, 10,
 		     out_cdc_ctx->width,
 		     out_cdc_ctx->height,
 		     "/usr/share/fonts/dejavu/DejaVuSerif.ttf");
-
 
         sws_scale( rgb2target,
 		   frame_rgb->data,
@@ -503,46 +506,46 @@ int main(int argc, char **argv)
         sws_freeContext( rgb2target);
 
 	int out_size = avcodec_encode_video ( out_cdc_ctx, buf, buf_size, frame);
-	//SaveFrame( frame_rgb, out_cdc_ctx->width, out_cdc_ctx->height, i);
+	if (out_size == 0){
+	  continue;
+	} else if (out_size < 0){
+	  puts( "avcodec_encode_video does not work well");
+	  return 1;
+	}
+
 #ifdef DEBUG
 	printf( "bitrate: %i\n", out_cdc_ctx->bit_rate);
 	printf( "qcomp  : %f\n", out_cdc_ctx->qcompress);
 	printf( "qmin   : %i\n", out_cdc_ctx->qmin);
 	printf( "qmax   : %i\n", out_cdc_ctx->qmax);
 #endif
-	if (out_size == 0){
-	  continue;
-	} else if (out_size < 0){
-	  error("can't encode frame.");
-	}
 
-	AVPacket packet;
-	av_init_packet(&packet);
+	AVPacket out_packet;
+	av_init_packet(&out_packet);
 
-	packet.stream_index = out_stream_video->index;
-	packet.data= buf;
-	packet.size= out_size;
+	out_packet.stream_index = out_stream_video->index;
+	out_packet.data= buf;
+	out_packet.size= out_size;
 
-	packet.pts= av_rescale_q( out_cdc_ctx->coded_frame->pts, 
-				  out_cdc_ctx->time_base,
-				  out_stream_video->time_base);
+	out_packet.pts= av_rescale_q( out_cdc_ctx->coded_frame->pts, 
+				      out_cdc_ctx->time_base,
+				      out_stream_video->time_base);
 	if( out_cdc_ctx->coded_frame->key_frame)
-	  packet.flags |= PKT_FLAG_KEY;
+	  out_packet.flags |= PKT_FLAG_KEY;
 
-	int ret = av_interleaved_write_frame( out_fmt_ctx, &packet);
+	int ret = av_interleaved_write_frame( out_fmt_ctx, &out_packet);
 	if(ret != 0) error("can't write frame.");
 
 	av_free( buffer);
-	av_free_packet( &packet);
+	av_free_packet( &out_packet);
 	printf( "%i\n", i);
-#ifdef DEBUG
-       	if( i >= 100)break;
+#ifdef HEAD
+       	if( i >= 360)break;
 #endif
       }
     }
     av_free_packet( &packet);
   }
-
   puts("Encode completed");
   av_write_trailer( out_fmt_ctx);
   puts("Trailer writing completed");  
