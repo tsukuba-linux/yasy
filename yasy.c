@@ -9,11 +9,6 @@
 #include <avformat.h>
 #include <swscale.h>
 
-// Using OpenCV libraries
-#include <cv.h>
-#include <cxcore.h>
-#include <highgui.h>
-
 // Using GD libraries
 #include <gd.h>
 
